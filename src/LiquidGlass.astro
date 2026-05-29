@@ -1,0 +1,314 @@
+---
+import type { LiquidGlassMode, LiquidGlassProps } from "./types.js";
+
+const {
+  displacementScale = 70,
+  blurAmount = 0.0625,
+  saturation = 140,
+  aberrationIntensity = 5,
+  elasticity = 0.15,
+  cornerRadius = 999,
+  class: className = "",
+  padding = "24px 32px",
+  overLight = false,
+  mode = "standard",
+  clickable = false,
+  style = "",
+  id,
+} = Astro.props as LiquidGlassProps;
+
+const instanceId = id ?? `lg-${Math.random().toString(36).slice(2)}`;
+const filterId = `${instanceId}-filter`;
+const config = {
+  filterId,
+  displacementScale,
+  blurAmount,
+  saturation,
+  aberrationIntensity,
+  elasticity,
+  cornerRadius,
+  overLight,
+  mode,
+};
+const rootClass = ["lg-root", className, clickable ? "is-clickable" : ""].filter(Boolean).join(" ");
+const displacementDirection = mode === "shader" ? 1 : -1;
+---
+
+<div
+  id={instanceId}
+  class={rootClass}
+  data-liquid-glass
+  data-lg-config={JSON.stringify(config)}
+  data-over-light={overLight ? "true" : undefined}
+  style={`--lg-radius:${cornerRadius}px;--lg-padding:${padding};${style}`}
+>
+  <span class="lg-shadow" aria-hidden="true"></span>
+  <span class="lg-shadow-overlay" aria-hidden="true"></span>
+
+  <div class="lg-glass">
+    <svg class="lg-filter-svg" aria-hidden="true">
+      <defs>
+        <filter id={filterId} x="-50%" y="-50%" width="200%" height="200%" color-interpolation-filters="sRGB">
+          <feImage
+            x="0" y="0" width="100%" height="100%"
+            result="DISPLACEMENT_MAP"
+            preserveAspectRatio="xMidYMid slice"
+          />
+          <feColorMatrix
+            in="DISPLACEMENT_MAP"
+            type="matrix"
+            values="0.3 0.3 0.3 0 0 0.3 0.3 0.3 0 0 0.3 0.3 0.3 0 0 0 0 0 1 0"
+            result="EDGE_INTENSITY"
+          />
+          <feComponentTransfer in="EDGE_INTENSITY" result="EDGE_MASK">
+            <feFuncA type="table" tableValues={`0 ${Math.min(aberrationIntensity * 0.1, 0.5)} 1`} />
+          </feComponentTransfer>
+          <feOffset in="SourceGraphic" dx="0" dy="0" result="CENTER_ORIGINAL" />
+          <feDisplacementMap
+            in="SourceGraphic" in2="DISPLACEMENT_MAP"
+            scale={displacementScale * displacementDirection}
+            xChannelSelector="R" yChannelSelector="B"
+            result="RED_DISPLACED"
+          />
+          <feColorMatrix
+            in="RED_DISPLACED"
+            type="matrix"
+            values="1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 1 0"
+            result="RED_CHANNEL"
+          />
+          <feDisplacementMap
+            in="SourceGraphic" in2="DISPLACEMENT_MAP"
+            scale={(displacementScale - aberrationIntensity * 2.5) * displacementDirection}
+            xChannelSelector="R" yChannelSelector="B"
+            result="GREEN_DISPLACED"
+          />
+          <feColorMatrix
+            in="GREEN_DISPLACED"
+            type="matrix"
+            values="0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 1 0"
+            result="GREEN_CHANNEL"
+          />
+          <feDisplacementMap
+            in="SourceGraphic" in2="DISPLACEMENT_MAP"
+            scale={(displacementScale - aberrationIntensity * 5.0) * displacementDirection}
+            xChannelSelector="R" yChannelSelector="B"
+            result="BLUE_DISPLACED"
+          />
+          <feColorMatrix
+            in="BLUE_DISPLACED"
+            type="matrix"
+            values="0 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 1 0"
+            result="BLUE_CHANNEL"
+          />
+          <feBlend in="GREEN_CHANNEL" in2="BLUE_CHANNEL" mode="screen" result="GB_COMBINED" />
+          <feBlend in="RED_CHANNEL" in2="GB_COMBINED" mode="screen" result="RGB_COMBINED" />
+          <feGaussianBlur in="RGB_COMBINED" stdDeviation={Math.max(0.3, 0.3 + aberrationIntensity * 0.15)} result="ABERRATED_BLURRED" />
+          <feComposite in="ABERRATED_BLURRED" in2="EDGE_MASK" operator="in" result="EDGE_ABERRATION" />
+          <feComponentTransfer in="EDGE_MASK" result="INVERTED_MASK">
+            <feFuncA type="table" tableValues="1 0" />
+          </feComponentTransfer>
+          <feComposite in="CENTER_ORIGINAL" in2="INVERTED_MASK" operator="in" result="CENTER_CLEAN" />
+          <feComposite in="EDGE_ABERRATION" in2="CENTER_CLEAN" operator="over" />
+        </filter>
+      </defs>
+    </svg>
+    <span class="lg-warp" aria-hidden="true"></span>
+    <div class="lg-content"><slot /></div>
+  </div>
+
+  <span class="lg-border-screen" aria-hidden="true"></span>
+  <span class="lg-border-overlay" aria-hidden="true"></span>
+  {clickable && <div class="lg-hover" aria-hidden="true"></div>}
+</div>
+
+<script>
+  import { mountLiquidGlass } from "./client/liquid-glass.js";
+  mountLiquidGlass();
+  document.addEventListener("astro:page-load", mountLiquidGlass);
+</script>
+
+<style>
+.lg-root {
+  --lg-x: 0px;
+  --lg-y: 0px;
+  --lg-scale-x: 1;
+  --lg-scale-y: 1;
+  --lg-width: auto;
+  --lg-height: auto;
+  --lg-angle: 135deg;
+  --lg-highlight-a: 0.12;
+  --lg-highlight-b: 0.4;
+  --lg-stop-a: 33%;
+  --lg-stop-b: 66%;
+  --lg-filter: none;
+  --lg-backdrop: blur(6px) saturate(140%);
+  position: relative;
+  top: 50%;
+  left: 50%;
+  display: inline-flex;
+  transform: translate(calc(-50% + var(--lg-x)), calc(-50% + var(--lg-y)))
+    scaleX(var(--lg-scale-x)) scaleY(var(--lg-scale-y));
+  transition: transform 0.12s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  will-change: transform;
+}
+
+.lg-root.lg-resetting {
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.lg-root[data-lg-active="true"] {
+  --lg-scale-x: 0.92;
+  --lg-scale-y: 0.92;
+}
+
+.lg-root.is-clickable {
+  cursor: pointer;
+}
+
+.lg-shadow {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--lg-radius);
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.2);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.lg-root[data-over-light="true"] .lg-shadow {
+  opacity: 1;
+}
+
+.lg-shadow-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--lg-radius);
+  pointer-events: none;
+  background: rgba(0, 0, 0, 0.55);
+  mix-blend-mode: overlay;
+  opacity: 0;
+}
+
+.lg-root[data-over-light="true"] .lg-shadow-overlay {
+  opacity: 1;
+}
+
+.lg-glass {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 24px;
+  padding: var(--lg-padding);
+  border-radius: var(--lg-radius);
+  overflow: hidden;
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    0 8px 24px rgba(0, 0, 0, 0.12),
+    0 16px 48px rgba(0, 0, 0, 0.08),
+    0 24px 4px -16px rgba(0, 0, 0, 0.15);
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+.lg-root[data-over-light="true"] .lg-glass {
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.3),
+    0 12px 36px rgba(0, 0, 0, 0.25),
+    0 24px 64px rgba(0, 0, 0, 0.2),
+    0 32px 8px -20px rgba(0, 0, 0, 0.35);
+}
+
+.lg-filter-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.lg-warp {
+  position: absolute;
+  inset: 0;
+  filter: var(--lg-filter);
+  backdrop-filter: var(--lg-backdrop);
+  -webkit-backdrop-filter: var(--lg-backdrop);
+}
+
+.lg-content {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  color: white;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
+.lg-root[data-over-light="true"] .lg-content {
+  text-shadow: none;
+}
+
+.lg-border-screen,
+.lg-border-overlay {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--lg-radius);
+  pointer-events: none;
+  padding: 1.5px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  box-shadow:
+    0 0 0 0.5px rgba(255, 255, 255, 0.5) inset,
+    0 1px 3px rgba(255, 255, 255, 0.25) inset,
+    0 1px 4px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(
+    var(--lg-angle),
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, calc(var(--lg-highlight-a) * 0.5)) calc(var(--lg-stop-a) * 0.5),
+    rgba(255, 255, 255, var(--lg-highlight-a)) var(--lg-stop-a),
+    rgba(255, 255, 255, calc((var(--lg-highlight-a) + var(--lg-highlight-b)) / 2)) calc((var(--lg-stop-a) + var(--lg-stop-b)) / 2),
+    rgba(255, 255, 255, var(--lg-highlight-b)) var(--lg-stop-b),
+    rgba(255, 255, 255, calc(var(--lg-highlight-b) * 0.5)) calc((var(--lg-stop-b) + 100%) / 2),
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+
+.lg-border-screen {
+  mix-blend-mode: screen;
+  opacity: 0.2;
+}
+
+.lg-border-overlay {
+  mix-blend-mode: overlay;
+  opacity: 1;
+}
+
+.lg-hover {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--lg-radius);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background-image: radial-gradient(
+    circle at 50% 0%,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  mix-blend-mode: overlay;
+}
+
+.lg-root.is-clickable:hover .lg-hover {
+  opacity: 0.5;
+}
+
+.lg-root[data-lg-active="true"] .lg-hover {
+  opacity: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lg-root {
+    transform: none;
+    transition: none;
+  }
+}
+</style>

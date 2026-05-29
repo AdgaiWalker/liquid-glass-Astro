@@ -17,18 +17,10 @@ function smoothStep(a: number, b: number, t: number): number {
   return t * t * (3 - 2 * t)
 }
 
-function length(x: number, y: number): number {
-  return Math.sqrt(x * x + y * y)
-}
-
 function roundedRectSDF(x: number, y: number, width: number, height: number, radius: number): number {
   const qx = Math.abs(x) - width + radius
   const qy = Math.abs(y) - height + radius
-  return Math.min(Math.max(qx, qy), 0) + length(Math.max(qx, 0), Math.max(qy, 0)) - radius
-}
-
-function texture(x: number, y: number): Vec2 {
-  return { x, y }
+  return Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - radius
 }
 
 // Shader fragment functions for different effects
@@ -36,10 +28,10 @@ export const fragmentShaders = {
   liquidGlass: (uv: Vec2): Vec2 => {
     const ix = uv.x - 0.5
     const iy = uv.y - 0.5
-    const distanceToEdge = roundedRectSDF(ix, iy, 0.3, 0.2, 0.6)
-    const displacement = smoothStep(0.8, 0, distanceToEdge - 0.15)
+    const distanceToEdge = roundedRectSDF(ix, iy, 0.35, 0.35, 0.55)
+    const displacement = smoothStep(0.7, 0, distanceToEdge - 0.1)
     const scaled = smoothStep(0, 1, displacement)
-    return texture(ix * scaled + 0.5, iy * scaled + 0.5)
+    return { x: ix * scaled + 0.5, y: iy * scaled + 0.5 }
   },
 }
 
@@ -48,12 +40,11 @@ export type FragmentShaderType = keyof typeof fragmentShaders
 export class ShaderDisplacementGenerator {
   private canvas: HTMLCanvasElement
   private context: CanvasRenderingContext2D
-  private canvasDPI = 1
 
   constructor(private options: ShaderOptions) {
     this.canvas = document.createElement("canvas")
-    this.canvas.width = options.width * this.canvasDPI
-    this.canvas.height = options.height * this.canvasDPI
+    this.canvas.width = options.width
+    this.canvas.height = options.height
     this.canvas.style.display = "none"
 
     const context = this.canvas.getContext("2d")
@@ -64,23 +55,29 @@ export class ShaderDisplacementGenerator {
   }
 
   updateShader(mousePosition?: Vec2): string {
-    const w = this.options.width * this.canvasDPI
-    const h = this.options.height * this.canvasDPI
+    const w = this.options.width
+    const h = this.options.height
 
     let maxScale = 0
     const rawValues: number[] = []
 
-    // Calculate displacement values
+    // Calculate displacement values with 2x2 supersampling
+    const offsets = [0.25, 0.75];
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
-        const uv: Vec2 = { x: x / w, y: y / h }
-
-        const pos = this.options.fragment(uv, mousePosition)
-        const dx = pos.x * w - x
-        const dy = pos.y * h - y
-
-        maxScale = Math.max(maxScale, Math.abs(dx), Math.abs(dy))
-        rawValues.push(dx, dy)
+        let totalDx = 0, totalDy = 0;
+        for (const oy of offsets) {
+          for (const ox of offsets) {
+            const uv: Vec2 = { x: (x + ox) / w, y: (y + oy) / h };
+            const pos = this.options.fragment(uv, mousePosition);
+            totalDx += pos.x * w - (x + ox);
+            totalDy += pos.y * h - (y + oy);
+          }
+        }
+        const dx = totalDx / 4;
+        const dy = totalDy / 4;
+        maxScale = Math.max(maxScale, Math.abs(dx), Math.abs(dy));
+        rawValues.push(dx, dy);
       }
     }
 
@@ -104,7 +101,7 @@ export class ShaderDisplacementGenerator {
 
         // Smooth the displacement values at edges to prevent hard transitions
         const edgeDistance = Math.min(x, y, w - x - 1, h - y - 1)
-        const edgeFactor = Math.min(1, edgeDistance / 2) // Smooth within 2 pixels of edge
+        const edgeFactor = Math.min(1, edgeDistance / 4)
 
         const smoothedDx = dx * edgeFactor
         const smoothedDy = dy * edgeFactor
@@ -126,9 +123,5 @@ export class ShaderDisplacementGenerator {
 
   destroy(): void {
     this.canvas.remove()
-  }
-
-  getScale(): number {
-    return this.canvasDPI
   }
 }
