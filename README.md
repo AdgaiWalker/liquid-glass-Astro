@@ -6,7 +6,7 @@
 <!-- src: package.json:4 -->
 Apple 液态玻璃效果的 Astro 组件。
 
-移植自 [liquid-glass-react](https://github.com/rdev/liquid-glass-react)，原作者 [@rdev](https://github.com/rdev)。
+React→Astro：[liquid-glass-react](https://github.com/rdev/liquid-glass-react)，原作者 [@rdev](https://github.com/rdev)。
 
 卡片示例                  |  按钮示例
 :-------------------------:|:-------------------------:
